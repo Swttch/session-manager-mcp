@@ -4,6 +4,7 @@
 // Environment: CLAUDE_CONFIG_DIR (where the CLI keeps transcripts) and
 // SWTTCH_SESSION_ID (the calling session, what "self" means).
 
+import fs from 'node:fs';
 import { AREAS, serverNameFor } from './areas.js';
 import { createMcpHandler } from './mcp-handler.js';
 import { serveStdio } from './stdio.js';
@@ -21,4 +22,5 @@ if (!createTools) {
 }
 
 const tools = createTools({ selfSessionId: process.env.SWTTCH_SESSION_ID || undefined });
-serveStdio(createMcpHandler({ serverName: serverNameFor(area), version: '0.0.0', tools }));
+const { version } = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+serveStdio(createMcpHandler({ serverName: serverNameFor(area), version, tools }));

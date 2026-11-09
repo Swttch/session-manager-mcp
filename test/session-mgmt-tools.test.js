@@ -80,6 +80,7 @@ test('the stdio command serves tools/list and tools/call for one area over newli
   try {
     const init = await rpc(child, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
     assert.equal(init.result.serverInfo.name, 'swttch_session_mgmt');
+    assert.equal(init.result.serverInfo.version, JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version, 'the server reports the version of the package that is running');
     const list = await rpc(child, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
     assert.ok(list.result.tools.some((t) => t.name === 'list_sessions'));
     const call = await rpc(child, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'list_sessions', arguments: {} } });
