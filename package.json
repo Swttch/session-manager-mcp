@@ -1,0 +1,39 @@
+{
+  "name": "@swttch/session-manager-mcp",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Session-management MCP server for Swttch: list, message, group, archive and steer Claude Code sessions from inside a session.",
+  "license": "MIT",
+  "author": "yhk1038",
+  "bin": {
+    "swttch-session-manager-mcp": "src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Swttch/session-manager-mcp.git"
+  },
+  "keywords": [
+    "mcp",
+    "claude-code",
+    "swttch",
+    "sessions"
+  ],
+  "homepage": "https://github.com/Swttch/session-manager-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/Swttch/session-manager-mcp/issues"
+  }
+}
