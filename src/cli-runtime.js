@@ -61,15 +61,47 @@ export function createCliRuntime({ claudeBin = defaultClaudeBin(), ttlMs = 3000 
     });
   }
 
-  function spawnDetached(args, cwd) {
+  // onExit, when given, is called with the exit code once the started program ends. The program is
+  // still detached and unwatched by the event loop, so this fires only if this process is alive then.
+  function spawnDetached(args, cwd, { onExit } = {}) {
     return new Promise((resolve, reject) => {
       const child = launch(claudeBin, args, { cwd, detached: true, stdio: 'ignore' });
       child.once('error', reject);
+      if (onExit) child.once('exit', (code) => { void onExit(code); });
       child.once('spawn', () => {
         child.unref();
         cached = null; // the live list changes now
         resolve();
       });
+    });
+  }
+
+  // Runs the CLI to the end with `input` on its stdin, and reports how it ended instead of throwing.
+  // For a command typed at the CLI (`/rename ...`): stdin carries it, so no argument needs quoting.
+  // CLAUDECODE is taken out of the environment: this server is itself started by a CLI, and a CLI
+  // that finds the variable takes itself for a nested one.
+  function runClaude(args, { cwd, input = '', timeoutMs = 60000 } = {}) {
+    return new Promise((resolve) => {
+      const env = { ...process.env, TERM: 'dumb', CI: 'true' };
+      delete env.CLAUDECODE;
+      let child;
+      try {
+        child = launch(claudeBin, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+      } catch (error) {
+        return resolve({ code: 127, stdout: '', stderr: String(error.message ?? error) });
+      }
+      let stdout = '';
+      let stderr = '';
+      let settled = false;
+      const settle = (result) => { if (!settled) { settled = true; clearTimeout(timer); resolve(result); } };
+      const timer = setTimeout(() => { child.kill(); settle({ code: 124, stdout, stderr: stderr || `claude did not finish in ${timeoutMs} ms.` }); }, timeoutMs);
+      child.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
+      child.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
+      child.once('error', (error) => settle({ code: 127, stdout, stderr: String(error.message ?? error) }));
+      child.once('close', (code) => settle({ code: code ?? 1, stdout, stderr }));
+      // A CLI that dies before reading closes the pipe; the close handler reports why it stopped.
+      child.stdin?.on('error', () => {});
+      child.stdin?.end(input);
     });
   }
 
@@ -111,5 +143,5 @@ export function createCliRuntime({ claudeBin = defaultClaudeBin(), ttlMs = 3000 
     return findExecutable(cmd);
   }
 
-  return { claudeBin, listLive, spawnDetached, exec, spawnProgram, which, platform: process.platform };
+  return { claudeBin, listLive, spawnDetached, runClaude, exec, spawnProgram, which, platform: process.platform };
 }

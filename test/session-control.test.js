@@ -22,8 +22,17 @@ function setup({ self = 'cccc', live = [] } = {}) {
   const runtime = {
     listLive: async () => live,
     spawnDetached: async (args, cwd) => { spawned.push({ args, cwd }); },
+    // What the CLI does with /rename: it writes the name into the transcript and says so.
+    runClaude: async (args, options) => {
+      const id = args[args.indexOf('--resume') + 1];
+      const name = options.input.replace(/^\/rename /, '').trim();
+      fs.appendFileSync(path.join(proj, `${id}.jsonl`), JSON.stringify({ type: 'custom-title', customTitle: name, sessionId: id }) + '\n');
+      return { code: 0, stdout: `Session renamed to: ${name}\n`, stderr: '' };
+    },
   };
-  const ctx = { configDir, dataDir, selfSessionId: self, runtime };
+  // No program holds any of these sessions; a test that needs one passes its own.
+  const owners = { find: async () => null, control: async () => ({}) };
+  const ctx = { configDir, dataDir, selfSessionId: self, runtime, owners };
   const toMap = (tools) => Object.fromEntries(tools.map((t) => [t.name, t.handler]));
   return { ctx, spawned, mgmt: toMap(createSessionMgmtTools(ctx)), session: toMap(createSessionTools(ctx)), proj };
 }
@@ -45,7 +54,7 @@ test('send_message to an idle session resumes it with -p and labels the sender',
   assert.equal(spawned[0].cwd, '/tmp/demo');
   const args = spawned[0].args;
   assert.deepEqual(args.slice(0, 3), ['--resume', 'aaaa', '-p']);
-  assert.match(args[args.length - 1], /From Caller[\s\S]*please continue/);
+  assert.match(args[args.length - 1], /^From Caller \(session cccc\):\n[\s\S]*please continue/);
 });
 
 test('send_message to a session another program is running says so and spawns nothing', async () => {
@@ -149,7 +158,7 @@ test('list_start_targets lists the folders sessions have run in', async () => {
 
 test('tools with nothing behind them yet answer unavailable instead of pretending', async () => {
   const { mgmt, session } = setup();
-  for (const [name, args] of [['set_remote_control', { session_id: 'aaaa', enabled: true }], ['clear_session', { session_id: 'aaaa' }], ['detach_session', { session_id: 'aaaa' }], ['export_transcript', { session_id: 'aaaa' }], ['set_session_fast_mode', { session_id: 'aaaa', enabled: true }], ['set_session_output_style', { session_id: 'aaaa', style: 'default' }]]) {
+  for (const [name, args] of [['set_remote_control', { session_id: 'aaaa', enabled: true }], ['clear_session', { session_id: 'aaaa' }], ['export_transcript', { session_id: 'aaaa' }], ['set_session_fast_mode', { session_id: 'aaaa', enabled: true }], ['set_session_output_style', { session_id: 'aaaa', style: 'default' }]]) {
     await assert.rejects(mgmt[name](args), /^Error: unavailable: /, name);
   }
   for (const [name, args] of [['move_to_cloud', { summary: 's' }], ['hand_off_to_session', { title: 't', remaining_plan: 'p' }], ['mark_chapter', { title: 'c' }], ['read_widget_context', { tool_name: 'w' }]]) {

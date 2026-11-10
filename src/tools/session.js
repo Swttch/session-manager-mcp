@@ -15,7 +15,7 @@ export function createSessionTools(options = {}) {
   return [
     {
       name: 'start_session',
-      description: 'Start a separate Claude Code session for a task while you stay with the user. Only a fresh local session started because the user asked ("user_asked") is supported; the brief is sent to the new session as its first message. The new session is linked to the calling session.',
+      description: 'Start a separate Claude Code session for a task while you stay with the user. Only a fresh local session started because the user asked ("user_asked") is supported; the brief is sent to the new session as its first message. The new session is linked to the calling session. When the new session ends its turn, the calling session is sent a message quoting its last reply (up to 400 characters), as long as the calling session is still running then and is held by a program that can deliver it; the answer\'s wake_when_done says whether that was set up. Do not wait or poll for it. When you mention the new session to the user, write it as a link, [its title](#session_<session_id>), so they can open it with a click.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -38,7 +38,7 @@ export function createSessionTools(options = {}) {
           proposal_id: { type: 'string' },
           branch_name: { type: 'string', description: 'A short slug for the new worktree\'s branch (the prefix setting and a suffix are added).' },
           source_branch: { type: 'string', description: 'The branch the new worktree is cut from. Default: the folder\'s current branch.' },
-          wake_when_done: { type: 'boolean' },
+          wake_when_done: { type: 'boolean', description: 'Default true: message the calling session when the new session ends its turn. false: start it and hear nothing.' },
         },
       },
       handler: async (args) => {

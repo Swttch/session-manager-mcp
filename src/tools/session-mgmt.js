@@ -10,9 +10,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { findCliSession, getCliSession, listCliSessions, readCliSessionEvents, searchCliSessions, transcriptSessionIds } from '../cli-sessions.js';
 import { SessionMark } from '../store/entities.js';
-import { notYet } from './common.js';
+import { framePeerMessage, notYet } from './common.js';
 import { removeWorktree, restoreWorktree } from '../worktrees.js';
 import { deleteSessionById } from '../session-removal.js';
+import { normalizeSessionName, renameWithCli } from '../rename.js';
 import { familyOf, isCallingSession, lookups, resolveContext, resolveSessionId, sessionRow, unavailable } from './context.js';
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -205,7 +206,7 @@ export function createSessionMgmtTools(options = {}) {
         const summary = getCliSession({ configDir, sessionId: target });
         const live = (await liveById()).get(target);
         const sender = selfSessionId ? (marks.get(selfSessionId)?.title ?? getCliSession({ configDir, sessionId: selfSessionId }).title) : 'another session';
-        const labelled = `From ${sender}${selfSessionId ? ` (session ${selfSessionId})` : ''}:\n${message}`;
+        const labelled = framePeerMessage({ from: selfSessionId ?? '', name: sender, body: message });
         if (live) {
           const owner = await owners.find(target);
           if (!owner) throw new Error(heldElsewhere(target, live) + ' Delivering to a running session is unavailable from here yet.');
@@ -305,16 +306,29 @@ export function createSessionMgmtTools(options = {}) {
     },
     {
       name: 'set_session_title',
-      description: 'Rename a session ("self" for the calling session). The name is kept in the Swttch marks and shown wherever Swttch lists sessions.',
+      description: 'Rename a session ("self" for the calling session). The name is recorded by the CLI itself, where every client that lists sessions reads it (the terminal, the editor extensions, the desktop apps). A session a Swttch program is running is renamed by that program; any other session is renamed by running the CLI\'s own /rename for it, which adds the command and its answer to that session\'s transcript.',
       inputSchema: { type: 'object', properties: { session_id: idSchema, title: { type: 'string' } }, required: ['session_id', 'title'] },
       handler: async ({ session_id, title }) => {
-        if (typeof title !== 'string' || title.trim() === '') throw new Error('title must not be empty.');
+        const name = normalizeSessionName(title);
+        if (name === '') throw new Error('title must not be empty.');
         const sessionId = resolveSessionId(ctx, session_id);
-        getCliSession({ configDir, sessionId });
-        const mark = markOf(sessionId);
-        mark.title = title;
-        store.marks.save(mark);
-        return `Renamed session ${sessionId} to "${title}".`;
+        const summary = getCliSession({ configDir, sessionId });
+        // The program that runs the session renames it: a running CLI holds the name and writes it
+        // again at the end of the transcript, so a name written beside it could be written back over.
+        const owner = await owners.find(sessionId);
+        if (owner) {
+          try {
+            await owners.control(owner, { sessionId, action: 'rename', title: name });
+            return `Renamed session ${sessionId} to "${name}" through the program that holds it (pid ${owner.pid}).`;
+          } catch (error) {
+            // A holding program from before it learned this request: fall through to the CLI's own command.
+            if (!/Unknown action/i.test(String(error?.message ?? error))) throw error;
+          }
+        }
+        const live = (await liveById()).get(sessionId);
+        await renameWithCli(runtime, { sessionId, name, cwd: summary.cwd ?? process.cwd() });
+        const note = live ? ' Another program is running this session; if it holds a name of its own, it may write that name back at the end of its next turn.' : '';
+        return `Renamed session ${sessionId} to "${name}".${note}`;
       },
     },
     setting('set_session_model', 'model', ({ model }) => {
@@ -342,7 +356,28 @@ export function createSessionMgmtTools(options = {}) {
     notYet('set_session_output_style', { session_id: idSchema, style: { type: 'string' } }, ['session_id', 'style'], 'Switch the output style one session writes in.', 'there is no per-session output style yet'),
     notYet('set_remote_control', { session_id: idSchema, enabled: { type: 'boolean' } }, ['session_id', 'enabled'], 'Turn remote access on or off for a session.', 'remote access is not connected to this server'),
     notYet('clear_session', { session_id: idSchema }, ['session_id'], 'Clear a session\'s conversation (/clear).', 'clearing needs the program that holds the session'),
-    notYet('detach_session', { session_id: idSchema }, ['session_id'], 'Move a session you started to the top level.', 'the sidebar has no nesting yet'),
+    {
+      name: 'detach_session',
+      description: 'Move a session you started to the top level: it leaves your family (list_sessions with linked no longer lists it) and stops reporting the end of its turns to you. It keeps running and keeps everything else it has. Only the session that started it can do this.',
+      inputSchema: { type: 'object', properties: { session_id: { type: 'string', description: 'The sessionId of a session you started, or its handle.' } }, required: ['session_id'] },
+      handler: async ({ session_id }) => {
+        if (isCallingSession(ctx, session_id)) throw new Error('Cannot detach the calling session; name a session it started.');
+        const { marks } = lookups(store);
+        const target = resolveTarget(session_id, marks);
+        const mark = marks.get(target);
+        // A session started a moment ago may have no transcript yet; its mark already names it.
+        const title = mark?.title ?? getCliSession({ configDir, sessionId: target }).title;
+        if (!mark?.parentSessionUid) {
+          return { session_id: target, title, detached: false, message: 'No session started this one, so it is already at the top level.' };
+        }
+        if (selfSessionId && mark.parentSessionUid !== selfSessionId) {
+          throw new Error(`Session ${target} was started by another session (${mark.parentSessionUid}); only that session can detach it.`);
+        }
+        mark.parentSessionUid = null;
+        store.marks.save(mark);
+        return { session_id: target, title, detached: true, message: 'It is now a top-level session. It is no longer linked to you, and you will not be told when it ends a turn.' };
+      },
+    },
     notYet('export_transcript', { session_id: idSchema }, ['session_id'], 'Export a session\'s transcript as a zip.', 'zip export is not built yet'),
   ];
 }

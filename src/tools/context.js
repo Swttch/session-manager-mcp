@@ -58,9 +58,12 @@ export function familyOf(selfSessionId, marks) {
 export function sessionRow(summary, marks, groups, liveIds = new Set()) {
   const mark = marks.get(summary.sessionId);
   const group = mark?.groupId ? groups.get(mark.groupId) : undefined;
+  // The name in the transcript is the session's name. The mark's title only stands in for a session
+  // that has none there yet: one this server started a moment ago, or one named by an older version.
+  const { customTitle, ...facts } = summary;
   const row = {
-    ...summary,
-    title: mark?.title ?? summary.title,
+    ...facts,
+    title: customTitle ?? mark?.title ?? summary.title,
     isArchived: mark?.isArchived ?? false,
     isRunning: liveIds.has(summary.sessionId),
     group: group ? { id: group.id, name: group.name } : null,

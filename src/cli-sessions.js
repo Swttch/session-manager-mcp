@@ -71,6 +71,8 @@ function summarize(file, sessionId, mtimeMs) {
   return {
     sessionId,
     title: customTitle ?? aiTitle ?? firstPrompt ?? sessionId,
+    // The name someone gave the session (`/rename`, `--name`), as opposed to one the CLI made up.
+    customTitle: customTitle ?? null,
     cwd: cwd ?? null,
     lastActivityAt: new Date(mtimeMs).toISOString(),
   };
@@ -133,6 +135,22 @@ export function readCliSessionEvents({ configDir = defaultConfigDir(), sessionId
   const hasMore = turns.length > page.length;
   const text = page.map((e) => `[${e.type}${e.timestamp ? ` ${e.timestamp}` : ''}] ${contentText(e.message)}`).join('\n\n');
   return { text, cursor: hasMore && page.length > 0 ? page[0].uuid : null };
+}
+
+// The text of the last thing the assistant said in a session, or null when it has said nothing.
+// Only text counts: a turn that ended on a tool call has no reply to quote.
+export function lastAssistantText({ configDir = defaultConfigDir(), sessionId }) {
+  const { file } = findCliSession({ configDir, sessionId });
+  const entries = readEntries(file);
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry.type !== 'assistant') continue;
+    const content = entry.message?.content;
+    const text = typeof content === 'string' ? content
+      : Array.isArray(content) ? content.filter((b) => b?.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n') : '';
+    if (text.trim()) return text.trim();
+  }
+  return null;
 }
 
 export function transcriptSessionIds({ configDir = defaultConfigDir() } = {}) {

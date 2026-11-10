@@ -111,7 +111,7 @@ Status: **works** means it does what it says now; **needs Swttch Desktop** means
 | `set_session_output_style` | Switch the output style one session writes in. | not yet |
 | `set_remote_control` | Turn remote access on or off for a session. | not yet |
 | `clear_session` | Clear a session's conversation (/clear). | not yet |
-| `detach_session` | Move a session you started to the top level. | not yet |
+| `detach_session` | Move a session you started to the top level. | works |
 | `export_transcript` | Export a session's transcript as a zip. | not yet |
 
 #### `session` (7)
@@ -222,6 +222,27 @@ Status: **works** means it does what it says now; **needs Swttch Desktop** means
 - `use_worktree: false` always shares the folder.
 - `archive_session` removes a clean worktree (the branch stays) and keeps one that has uncommitted changes, saying so. A later message to the archived session brings the worktree back.
 - `delete_session`, `clean_up_worktrees` and `discard_kept_worktree` never discard uncommitted work unless you ask for it explicitly.
+
+### Names
+
+A session's name is the one the CLI keeps: the `custom-title` entry of its transcript, which the terminal's session list, the editor extensions and the desktop apps all read. `set_session_title` therefore never stores a name in a file of its own, and never writes the transcript itself:
+
+- **A Swttch program is running the session.** That program is asked to rename it (`rename` on its control route), and its CLI records the name. Nothing is added to the conversation.
+- **Otherwise.** The CLI's own `/rename <name>` is run for it: `claude -p --resume <id> --restricted --strict-mcp-config` with the command on stdin. It makes no model call and takes about a second; the command and the CLI's answer are added to that session's transcript. A CLI too old for the two flags is asked again without them.
+
+When another program that cannot be asked (a terminal) is running the session, the name is still written, and the answer says that the program may write a name of its own back at the end of its next turn.
+
+The title a session was started with is also kept in its mark, only so that the session can be listed in the moment before the CLI has written its transcript.
+
+### Hearing back
+
+When a session started with `start_session` ends its turn, the session that started it is sent one message: which session it is from, and its last reply (the first 400 characters when the reply is longer). `wake_when_done: false` turns that off, and the answer of `start_session` says whether it was set up. `detach_session` ends it too: a session moved to the top level leaves the family of the session that started it and no longer reports to it.
+
+A message one session sends another (this report, and `send_message`) is plain text whose first line names the sender: `From <title> (session <id>):`. That line is a contract for programs that draw transcripts, which show the message as coming from that session. It is not the CLI's own `<cross-session-message>` tag, because the CLI drops a typed message that is only that tag.
+
+The answer of `start_session` carries `session_id` and `cwd`, which is all a screen needs to open the new session. Its description asks Claude to mention the session as a link, `[title](#session_<session_id>)`, for a screen to turn into a way in.
+
+The server that started the session is the one that waits for it. So the message is sent only while the calling session is still running, and only when the program that holds the calling session can deliver it (see "How control works" above). A calling session that a terminal holds hears nothing.
 
 ### Proposals
 
