@@ -32,7 +32,7 @@ Then, inside any Claude Code session:
 >
 > Send "please rebase on main" to the session called `fix-login`.
 
-Each area is its own MCP server, so Claude sees tools as `mcp__swttch_<area>__<tool>` (for example `mcp__swttch_sidebar__create_group`). Add the areas you want. Together the eleven areas are 69 tools, which takes a real share of every session's context, so start with one or two:
+Each area is its own MCP server, so Claude sees tools as `mcp__swttch_<area>__<tool>` (for example `mcp__swttch_sidebar__create_group`). Add the areas you want. Together the eleven areas are 70 tools, which takes a real share of every session's context, so start with one or two:
 
 ```sh
 claude mcp add swttch-sessions -- npx -y @swttch/session-manager-mcp --area session_mgmt
@@ -89,7 +89,7 @@ Screen tools do not draw anything. They append a request to a file that a Swttch
 
 Status: **works** means it does what it says now; **needs Swttch Desktop** means it queues a request for a desktop to carry out; **not yet** means it is listed so the whole surface is visible, and answers `unavailable: <reason>` when called.
 
-#### `session_mgmt` (20)
+#### `session_mgmt` (21)
 
 | Tool | What it does | Status |
 | --- | --- | --- |
@@ -112,6 +112,7 @@ Status: **works** means it does what it says now; **needs Swttch Desktop** means
 | `set_remote_control` | Turn remote access on or off for a session. | not yet |
 | `clear_session` | Clear a session's conversation (/clear). | not yet |
 | `detach_session` | Move a session you started to the top level. | works |
+| `set_session_parent` | Put a session under another one by hand, or take it to the top level. Only the record of who started whom changes. | works |
 | `export_transcript` | Export a session's transcript as a zip. | not yet |
 
 #### `session` (7)

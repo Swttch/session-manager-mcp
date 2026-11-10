@@ -14,6 +14,7 @@ import { framePeerMessage, notYet } from './common.js';
 import { removeWorktree, restoreWorktree } from '../worktrees.js';
 import { deleteSessionById } from '../session-removal.js';
 import { normalizeSessionName, renameWithCli } from '../rename.js';
+import { setSessionParent } from '../set-parent.js';
 import { familyOf, isCallingSession, lookups, resolveContext, resolveSessionId, sessionRow, unavailable } from './context.js';
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -376,6 +377,23 @@ export function createSessionMgmtTools(options = {}) {
         mark.parentSessionUid = null;
         store.marks.save(mark);
         return { session_id: target, title, detached: true, message: 'It is now a top-level session. It is no longer linked to you, and you will not be told when it ends a turn.' };
+      },
+    },
+    {
+      name: 'set_session_parent',
+      description: 'Change which session another one is listed under, by hand: put it under a parent session, or leave parent_session_id out to take it to the top level. Only the record of who started whom is edited. The session keeps running and does not start reporting the end of its turns to the new parent (that is set up only when a session is started). A session cannot be put under itself or under one of its own descendants.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          session_id: { type: 'string', description: 'The sessionId of the session to move, or "self".' },
+          parent_session_id: { type: 'string', description: 'The sessionId of the new parent. Leave out to make the session top-level.' },
+        },
+        required: ['session_id'],
+      },
+      handler: async ({ session_id, parent_session_id }) => {
+        const target = isCallingSession(ctx, session_id) ? selfSessionId : session_id;
+        const parent = parent_session_id && isCallingSession(ctx, parent_session_id) ? selfSessionId : parent_session_id;
+        return setSessionParent(ctx, target, parent ?? null);
       },
     },
     notYet('export_transcript', { session_id: idSchema }, ['session_id'], 'Export a session\'s transcript as a zip.', 'zip export is not built yet'),

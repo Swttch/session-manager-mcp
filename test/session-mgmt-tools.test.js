@@ -25,10 +25,10 @@ function fixture() {
 
 const byName = (tools, name) => tools.find((t) => t.name === name);
 
-test('the area exposes all twenty session_mgmt tools, with the reference argument names', () => {
+test('the area exposes the twenty session_mgmt tools of the reference, plus set_session_parent', () => {
   const tools = createSessionMgmtTools({ configDir: fixture(), dataDir: fixture(), runtime: fakeRuntime });
-  assert.equal(tools.length, 20);
-  assert.deepEqual(tools.map((t) => t.name).sort(), ['archive_session', 'clear_session', 'delete_session', 'detach_session', 'export_transcript', 'get_session', 'get_usage', 'list_events', 'list_sessions', 'search_session_transcripts', 'send_message', 'set_remote_control', 'set_session_effort', 'set_session_fast_mode', 'set_session_model', 'set_session_output_style', 'set_session_permission_mode', 'set_session_title', 'stop_session', 'unarchive_session'].sort());
+  assert.equal(tools.length, 21);
+  assert.deepEqual(tools.map((t) => t.name).sort(), ['archive_session', 'clear_session', 'delete_session', 'detach_session', 'export_transcript', 'get_session', 'get_usage', 'list_events', 'list_sessions', 'search_session_transcripts', 'send_message', 'set_remote_control', 'set_session_effort', 'set_session_fast_mode', 'set_session_model', 'set_session_output_style', 'set_session_parent', 'set_session_permission_mode', 'set_session_title', 'stop_session', 'unarchive_session'].sort());
   assert.deepEqual(byName(tools, 'get_session').inputSchema.required, ['session_id']);
   assert.deepEqual(byName(tools, 'search_session_transcripts').inputSchema.required, ['query']);
 });
