@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createSessionMgmtTools } from '../src/tools/session-mgmt.js';
-import { setSessionParent } from '../src/set-parent.js';
+import { setSessionParent, INHERIT } from '../src/set-parent.js';
 import { resolveContext } from '../src/tools/context.js';
 
 // Who started a session is recorded in the marks. set_session_parent changes that record by hand:
@@ -39,14 +39,36 @@ test('null takes the session out to the top level', async () => {
   setSessionParent(ctx, 'bbbb', 'aaaa');
   const answer = setSessionParent(ctx, 'bbbb', null);
   assert.equal(answer.changed, true);
+  assert.equal(answer.parent_session_id, null);
+  // Kept as '' (top-level on purpose), which is not the null of "nothing chosen".
+  assert.equal(parentOf('bbbb'), '');
+});
+
+test('taking a session that has no mark to the top level leaves a record of the choice', async () => {
+  const { ctx, parentOf } = setup();
+  assert.equal(parentOf('cccc'), null);
+  assert.equal(setSessionParent(ctx, 'cccc', null).changed, true);
+  assert.equal(parentOf('cccc'), '');
+  assert.equal(setSessionParent(ctx, 'cccc', null).changed, false);
+});
+
+test('INHERIT forgets what was chosen, whether a parent or the top level', async () => {
+  const { ctx, parentOf } = setup();
+  setSessionParent(ctx, 'bbbb', 'aaaa');
+  assert.equal(setSessionParent(ctx, 'bbbb', INHERIT).changed, true);
   assert.equal(parentOf('bbbb'), null);
+  setSessionParent(ctx, 'cccc', null);
+  assert.equal(setSessionParent(ctx, 'cccc', INHERIT).changed, true);
+  assert.equal(parentOf('cccc'), null);
+  // Nothing was chosen for a session without a mark: no mark is made for it.
+  assert.equal(setSessionParent(ctx, 'dddd', INHERIT).changed, false);
+  assert.equal(ctx.store.marks.find('dddd'), undefined);
 });
 
 test('moving a session to its current parent changes nothing and says so', async () => {
   const { ctx } = setup();
   setSessionParent(ctx, 'bbbb', 'aaaa');
   assert.equal(setSessionParent(ctx, 'bbbb', 'aaaa').changed, false);
-  assert.equal(setSessionParent(ctx, 'cccc', null).changed, false);
 });
 
 test('refuses a session as its own parent', async () => {
@@ -87,5 +109,5 @@ test('is a tool of the session_mgmt area', async () => {
   assert.equal(parentOf('bbbb'), 'aaaa');
   const cleared = await tools.set_session_parent({ session_id: 'bbbb' });
   assert.equal(cleared.changed, true);
-  assert.equal(parentOf('bbbb'), null);
+  assert.equal(parentOf('bbbb'), '');
 });

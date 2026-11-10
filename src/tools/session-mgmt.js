@@ -14,6 +14,7 @@ import { framePeerMessage, notYet } from './common.js';
 import { removeWorktree, restoreWorktree } from '../worktrees.js';
 import { deleteSessionById } from '../session-removal.js';
 import { normalizeSessionName, renameWithCli } from '../rename.js';
+import { UNARCHIVED_ON_PURPOSE } from '../set-archived.js';
 import { setSessionParent } from '../set-parent.js';
 import { familyOf, isCallingSession, lookups, resolveContext, resolveSessionId, sessionRow, unavailable } from './context.js';
 
@@ -273,7 +274,7 @@ export function createSessionMgmtTools(options = {}) {
       handler: async ({ session_id }) => {
         requireExistingOther(session_id, 'unarchive');
         const mark = markOf(session_id);
-        mark.archivedAt = 0;
+        mark.archivedAt = UNARCHIVED_ON_PURPOSE; // not 0: a program that also reads the desktop app's archive must not show it archived again
         store.marks.save(mark);
         return `Restored session ${session_id}.`;
       },
