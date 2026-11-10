@@ -1,6 +1,6 @@
 {
   "name": "@swttch/session-manager-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Session-management MCP server for Swttch: list, message, group, archive and steer Claude Code sessions from inside a session.",
   "license": "MIT",
