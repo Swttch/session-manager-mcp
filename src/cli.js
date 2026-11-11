@@ -11,6 +11,8 @@ import { serveStdio } from './stdio.js';
 import { resolveContext } from './tools/context.js';
 import { setSessionParent, INHERIT } from './set-parent.js';
 import { setSessionArchived, INHERIT_ARCHIVE } from './set-archived.js';
+import { findDesktopSession, readDesktopState, watchDesktopState } from './desktop-sessions.js';
+import { startedBy } from './started-by.js';
 
 function areaFromArgs(argv) {
   const at = argv.indexOf('--area');
@@ -54,6 +56,70 @@ if (process.argv[2] === 'set-archived') {
   }
 }
 
+// The commands below answer what the Claude desktop app records about its sessions, so that a program
+// that shows sessions (a settings screen, a session list) never has to read the desktop app's files
+// itself. Each prints JSON, one object per line.
+//
+// swttch-session-manager-mcp desktop-state
+//   { ok, starters: {cliId: startedByCliId}, archived: [cliId], titles: {cliId: title}, running: [cliId] }
+if (process.argv[2] === 'desktop-state') {
+  try {
+    process.stdout.write(JSON.stringify({ ok: true, ...readDesktopState() }) + '\n');
+    process.exit(0);
+  } catch (error) {
+    process.stdout.write(JSON.stringify({ ok: false, error: error.message }) + '\n');
+    process.exit(1);
+  }
+}
+
+// swttch-session-manager-mcp desktop-session <desktopSessionId>
+//   { ok, session: {title?, cliSessionId?, cwd?, isArchived, lastActivityAt, awaitingPerson?} | null }
+if (process.argv[2] === 'desktop-session') {
+  try {
+    const id = process.argv[3];
+    if (!id) throw new Error('Usage: desktop-session <desktopSessionId>');
+    process.stdout.write(JSON.stringify({ ok: true, session: findDesktopSession(id) }) + '\n');
+    process.exit(0);
+  } catch (error) {
+    process.stdout.write(JSON.stringify({ ok: false, error: error.message }) + '\n');
+    process.exit(1);
+  }
+}
+
+// swttch-session-manager-mcp started-by <sessionId>
+//   { ok, startedBy: cliId | null, source: 'marks' | 'desktop' | null }
+// The record kept here answers first; the desktop app's answers only when nothing was chosen here.
+if (process.argv[2] === 'started-by') {
+  try {
+    const sessionId = process.argv[3];
+    if (!sessionId) throw new Error('Usage: started-by <sessionId>');
+    process.stdout.write(JSON.stringify({ ok: true, ...startedBy(resolveContext({}), sessionId) }) + '\n');
+    process.exit(0);
+  } catch (error) {
+    process.stdout.write(JSON.stringify({ ok: false, error: error.message }) + '\n');
+    process.exit(1);
+  }
+}
+
+// swttch-session-manager-mcp desktop-watch
+// Stays running and prints one line whenever what the desktop app records changes:
+//   { ok, change: {list, running}, ...the desktop-state fields }
+// A turn already running when it starts is announced at once; otherwise the first read is only the baseline,
+// so a program asks desktop-state first. It ends when its input closes, so a program that goes away takes it along.
+if (process.argv[2] === 'desktop-watch') {
+  const stop = watchDesktopState((state, change) => {
+    process.stdout.write(JSON.stringify({ ok: true, change, ...state }) + '\n');
+  });
+  const end = () => {
+    stop();
+    process.exit(0);
+  };
+  process.stdin.on('end', end);
+  process.stdin.on('close', end);
+  process.stdin.resume();
+  process.on('SIGTERM', end);
+  process.on('SIGINT', end);
+} else {
 const area = areaFromArgs(process.argv.slice(2));
 const createTools = area ? AREAS[area] : undefined;
 if (!createTools) {
@@ -64,3 +130,4 @@ if (!createTools) {
 const tools = createTools({ selfSessionId: process.env.SWTTCH_SESSION_ID || undefined });
 const { version } = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 serveStdio(createMcpHandler({ serverName: serverNameFor(area), version, tools }));
+}

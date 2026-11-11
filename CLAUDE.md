@@ -13,7 +13,7 @@ This file guides Claude Code (claude.ai/code) and other contributors working in 
 ## Principles
 
 1. **No runtime dependencies.** The package is plain ES modules and Node built-ins. MCP is an open protocol, so the JSON-RPC handler (`src/mcp-handler.js`) and the stdio transport (`src/stdio.js`) are small and local. Do not add an SDK or any other dependency without a strong reason.
-2. **Documented commands only.** Talk to the Claude CLI through what a terminal user can run: `claude agents --json`, `claude --resume <id> -p`, `claude --session-id`, `claude mcp list`, and commands typed at it such as `/rename`. What the CLI has a place for (a session's name) is kept in that place, through the CLI; only what it has no place for (archive, groups, who started whom) lives in the marks. Do not depend on undocumented flags, internal protocols or another program's private files. Reading the transcripts the CLI writes to `<config dir>/projects/*/*.jsonl` is allowed; modifying them is not (deleting a session is the one explicit exception and says so).
+2. **Documented commands only.** Talk to the Claude CLI through what a terminal user can run: `claude agents --json`, `claude --resume <id> -p`, `claude --session-id`, `claude mcp list`, and commands typed at it such as `/rename`. What the CLI has a place for (a session's name) is kept in that place, through the CLI; only what it has no place for (archive, groups, who started whom) lives in the marks. Do not depend on undocumented flags, internal protocols or another program's private files. Reading the transcripts the CLI writes to `<config dir>/projects/*/*.jsonl` is allowed; modifying them is not (deleting a session is the one explicit exception and says so). The one other file this package reads is the Claude desktop app's session folder (`src/desktop-sessions.js`), read-only and tolerant: a file that does not look as expected is skipped, and the programs that show sessions get its answers only through this package's commands, never by opening the folder themselves.
 3. **Never pretend.** A tool that cannot do something answers `unavailable: <reason>` (an error result), and names what is missing. A tool that queues work for someone else says `queued` and does not claim a result.
 4. **Layers.** Read tools need only the transcripts. Control tools need the CLI or the program running the session (found through the CLI registry, `src/owner-control.js`). Screen tools need a desktop (they append to `ui/ui_commands`). Keep each tool in the lowest layer that can do its job.
 5. **State is append-only text.** `src/store/jsonl-table.js` writes one JSON line per change to `<CCG_HOME>/entities/<domain>/<table>.entity.jsonl`; the later line for an id wins; `{"id":..,"deleted":true}` removes a row; a broken line is skipped and kept. Several programs share these files, so never rewrite or compact a file here.
@@ -36,6 +36,8 @@ src/
 ├── proposals.js        suggested sessions
 ├── session-removal.js  delete a session with its worktree and branch
 ├── desktop-workspace.js  read a desktop's layout (read-only)
+├── desktop-sessions.js   read and watch the Claude desktop app's session files (read-only)
+├── started-by.js       who started a session: the marks first, the desktop app's record after
 ├── store/              jsonl-table.js, entities.js
 └── tools/              one file per area, plus context.js and common.js
 test/                   node:test, one file per area or concern
