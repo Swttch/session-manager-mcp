@@ -260,7 +260,7 @@ Besides the MCP server, the entry script answers a few commands for a program th
 | `started-by <id>` | `{ startedBy, source, cwd }`: the session that started it, from the record kept here first, and from the Claude desktop app's record only when nothing was chosen here |
 | `desktop-state` | what the Claude desktop app records, by CLI id: `starters`, `archived`, `titles`, `running` |
 | `desktop-session <desktopId>` | one desktop session's own record (title, CLI id, folder, archived, waiting for the person), or `null` |
-| `desktop-watch` | stays running and prints a line whenever `desktop-state` changes (`change: { list, running }`); ends when its input closes |
+| `desktop-watch` | stays running and prints a line whenever `desktop-state` changes or a row of this package's own marks changes, such as a session put under another by `set_session_parent` (`change: { list, running }`); ends when its input closes |
 
 The desktop commands only read the desktop app's session folder (`claude-code-sessions/<account>/<workspace>/local_*.json`). Its shape is not a contract: a file that cannot be read is skipped, and a machine without the app answers with empty lists.
 
