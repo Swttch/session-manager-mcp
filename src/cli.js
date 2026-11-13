@@ -13,6 +13,7 @@ import { setSessionParent, INHERIT } from './set-parent.js';
 import { setSessionArchived, INHERIT_ARCHIVE } from './set-archived.js';
 import { findDesktopSession, readDesktopState, watchDesktopState } from './desktop-sessions.js';
 import { startedBy } from './started-by.js';
+import { watchMarks } from './marks-watch.js';
 
 function areaFromArgs(argv) {
   const at = argv.indexOf('--area');
@@ -104,14 +105,20 @@ if (process.argv[2] === 'started-by') {
 // swttch-session-manager-mcp desktop-watch
 // Stays running and prints one line whenever what the desktop app records changes:
 //   { ok, change: {list, running}, ...the desktop-state fields }
+// What moves is the desktop app's records and this package's own marks (who a session was put under by hand,
+// an archive by hand): a change to either one is a change of the list.
 // A turn already running when it starts is announced at once; otherwise the first read is only the baseline,
 // so a program asks desktop-state first. It ends when its input closes, so a program that goes away takes it along.
 if (process.argv[2] === 'desktop-watch') {
-  const stop = watchDesktopState((state, change) => {
+  const stopDesktop = watchDesktopState((state, change) => {
     process.stdout.write(JSON.stringify({ ok: true, change, ...state }) + '\n');
   });
+  const stopMarks = watchMarks(() => {
+    process.stdout.write(JSON.stringify({ ok: true, change: { list: true, running: false }, ...readDesktopState() }) + '\n');
+  });
   const end = () => {
-    stop();
+    stopDesktop();
+    stopMarks();
     process.exit(0);
   };
   process.stdin.on('end', end);

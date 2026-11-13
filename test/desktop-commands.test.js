@@ -69,3 +69,25 @@ test('desktop-watch prints a line when a title changes, and ends when its input 
   }
   assert.equal(await Promise.race([exited, new Promise((r) => setTimeout(() => r('still running'), 3000))]), 0);
 });
+
+test('desktop-watch prints a line when a session is put under another by the package, with no desktop file moving', async () => {
+  const { env, write } = fakeMachine();
+  write('local_a', { sessionId: 'local_a', cliSessionId: 'cli-a' });
+  const child = spawn(process.execPath, [cli, 'desktop-watch'], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+  let out = '';
+  child.stdout.on('data', (chunk) => (out += chunk));
+  const exited = new Promise((resolve) => child.on('exit', resolve));
+  try {
+    await new Promise((r) => setTimeout(r, 900)); // the watchers are up and have their baseline
+    const table = path.join(env.CCG_HOME, 'entities', 'sidebar', 'session_marks.entity.jsonl');
+    fs.mkdirSync(path.dirname(table), { recursive: true });
+    fs.writeFileSync(table, JSON.stringify({ id: 'cli-b', parentSessionUid: 'cli-a' }) + '\n');
+    const deadline = Date.now() + 5000;
+    while (!out.includes('\n') && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+    const line = JSON.parse(out.trim().split('\n')[0]);
+    assert.deepEqual(line.change, { list: true, running: false });
+  } finally {
+    child.stdin.end();
+  }
+  assert.equal(await Promise.race([exited, new Promise((r) => setTimeout(() => r('still running'), 3000))]), 0);
+});
