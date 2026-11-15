@@ -18,7 +18,7 @@ This file guides Claude Code (claude.ai/code) and other contributors working in 
 4. **Layers.** Read tools need only the transcripts. Control tools need the CLI or the program running the session (found through the CLI registry, `src/owner-control.js`). Screen tools need a desktop (they append to `ui/ui_commands`). Keep each tool in the lowest layer that can do its job.
 5. **State is append-only text.** `src/store/jsonl-table.js` writes one JSON line per change to `<CCG_HOME>/entities/<domain>/<table>.entity.jsonl`; the later line for an id wins; `{"id":..,"deleted":true}` removes a row; a broken line is skipped and kept. Several programs share these files, so never rewrite or compact a file here.
 6. **Rows are classes.** Entities in `src/store/entities.js` are classes with `fromRow`/`toRow`. A plain object exists only at the file boundary.
-7. **Be conservative with destructive tools.** Refuse the calling session, skip sessions another program runs, keep work that would be lost unless explicitly forced, and keep every path inside the session's folder.
+7. **Be conservative with destructive tools.** Refuse the calling session for tools that stop, delete or message it (archiving only marks the record, so the calling session may archive itself, and keeps its own worktree), skip sessions another program runs, keep work that would be lost unless explicitly forced, and keep every path inside the session's folder.
 
 ## Layout
 

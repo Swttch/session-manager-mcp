@@ -102,6 +102,17 @@ test('archive removes a clean worktree and keeps the branch; unarchive and the n
   assert.equal(env.spawned[0].cwd, wt.path);
 });
 
+test('the calling session archiving itself keeps its own worktree, because it is running in it', async () => {
+  const env = setup();
+  const out = await env.session.start_session(brief({ cwd: env.repo, use_worktree: true, name: 's' }));
+  const wt = env.store().marks.find(out.session_id).worktree;
+  env.transcript(out.session_id, wt.path);
+  const own = Object.fromEntries(createSessionMgmtTools({ ...env.ctx, selfSessionId: out.session_id }).map((t) => [t.name, t.handler]));
+  assert.match(await own.archive_session({ session_id: 'self' }), /worktree was kept because the session is running in it/i);
+  assert.ok(fs.existsSync(wt.path));
+  assert.ok(env.store().marks.find(out.session_id).archivedAt > 0);
+});
+
 test('archive keeps a worktree that holds uncommitted changes and says so; discard_kept_worktree removes it for good', async () => {
   const env = setup();
   const out = await env.session.start_session(brief({ cwd: env.repo, use_worktree: true, name: 'd' }));

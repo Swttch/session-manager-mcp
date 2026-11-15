@@ -284,7 +284,7 @@ The later line for an id is the row, and a line `{"id": ..., "deleted": true}` r
 
 The tools can delete sessions, stop turns, merge branches and remove worktrees, so they are deliberately conservative:
 
-- `delete_session` (at most 25 per call), `archive_session` and `stop_session` refuse the calling session, and skip sessions that another program is running.
+- `delete_session` (at most 25 per call) and `stop_session` refuse the calling session, and skip sessions that another program is running. `archive_session` and `unarchive_session` accept the calling session (they only mark its record); the worktree of the calling session is kept because it is running in it.
 - Worktrees and branches with uncommitted or unmerged work are kept unless `force_worktree_cleanup` / `include_uncommitted` is passed.
 - File tools (`open_in_editor`, `reveal_path`) only accept paths inside the calling session's folder.
 - `sync_with_base_branch` refuses to run over uncommitted changes and never pushes.

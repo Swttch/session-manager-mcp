@@ -108,8 +108,18 @@ test('archive_session hides a session from list_sessions until include_archived,
   assert.equal((await mgmt.list_sessions({})).find((r) => r.sessionId === 'aaaa').isArchived, false);
 });
 
-test('archiving the calling session is refused, like the reference tool refuses a running one', async () => {
+test('the calling session can archive and restore itself, by "self" or by its own id', async () => {
   const { mgmt } = setup('bbbb');
+  assert.match(await mgmt.archive_session({ session_id: 'self' }), /Archived session bbbb/);
+  assert.equal((await mgmt.get_session({ session_id: 'self' })).isArchived, true);
+  assert.match(await mgmt.unarchive_session({ session_id: 'bbbb' }), /Restored session bbbb/);
+  assert.equal((await mgmt.get_session({ session_id: 'self' })).isArchived, false);
+  assert.match(await mgmt.archive_session({ session_id: 'bbbb' }), /Archived session bbbb/);
+  assert.equal((await mgmt.get_session({ session_id: 'self' })).isArchived, true);
+});
+
+test('archiving "self" without a known calling session is a readable error', async () => {
+  const { mgmt } = setup();
   await assert.rejects(mgmt.archive_session({ session_id: 'self' }), /calling session/);
 });
 

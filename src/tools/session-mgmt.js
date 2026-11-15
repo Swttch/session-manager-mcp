@@ -59,11 +59,12 @@ export function createSessionMgmtTools(options = {}) {
     return new Map((await runtime.listLive()).map((row) => [row.sessionId, row]));
   }
 
-  function requireExistingOther(sessionId, verb) {
-    if (isCallingSession(ctx, sessionId)) {
-      throw new Error(`Cannot ${verb} the calling session; it is still running.`);
-    }
-    getCliSession({ configDir, sessionId }); // throws "Session not found" for an unknown id
+  // Archiving only marks the session's record, so the calling session may do it to itself (it is the
+  // tools that stop, delete or message a session that refuse the calling session). Returns the id with "self" resolved.
+  function existingSessionId(sessionId) {
+    const id = resolveSessionId(ctx, sessionId);
+    getCliSession({ configDir, sessionId: id }); // throws "Session not found" for an unknown id
+    return id;
   }
 
   function heldElsewhere(sessionId, live) {
@@ -245,22 +246,24 @@ export function createSessionMgmtTools(options = {}) {
     },
     {
       name: 'archive_session',
-      description: 'Archive a session: it leaves the default list and can be brought back with unarchive_session. This marks the session only; it does not stop a running process.',
+      description: 'Archive a session ("self" for the calling session): it leaves the default list and can be brought back with unarchive_session. This marks the session only; it does not stop a running process. The calling session may archive itself at once; the screen showing it then turns to its archived state. A worktree this server made is removed too, except for the calling session\'s own, which it is running in.',
       inputSchema: {
         type: 'object',
-        properties: { session_id: { type: 'string', description: 'The sessionId to archive.' }, reason: { type: 'string', description: 'Short reason, shown to the user.' } },
+        properties: { session_id: { type: 'string', description: 'The sessionId to archive, or "self".' }, reason: { type: 'string', description: 'Short reason, shown to the user.' } },
         required: ['session_id'],
       },
       handler: async ({ session_id }) => {
-        requireExistingOther(session_id, 'archive');
-        const mark = markOf(session_id);
+        const id = existingSessionId(session_id);
+        const mark = markOf(id);
         mark.archivedAt = Date.now();
         store.marks.save(mark);
-        if (!mark.worktree) return `Archived session ${session_id}.`;
+        if (!mark.worktree) return `Archived session ${id}.`;
+        // The calling session runs inside its own worktree; removing it would pull the folder out from under the running session.
+        if (isCallingSession(ctx, id)) return `Archived session ${id}. Its worktree was kept because the session is running in it.`;
         const removed = await removeWorktree(ctx, mark.worktree);
         return removed.removed
-          ? `Archived session ${session_id}. Its worktree removed; it comes back when the session next starts.`
-          : `Archived session ${session_id}. Its worktree was kept: ${removed.reason}.`;
+          ? `Archived session ${id}. Its worktree removed; it comes back when the session next starts.`
+          : `Archived session ${id}. Its worktree was kept: ${removed.reason}.`;
       },
     },
     {
@@ -272,11 +275,11 @@ export function createSessionMgmtTools(options = {}) {
         required: ['session_id'],
       },
       handler: async ({ session_id }) => {
-        requireExistingOther(session_id, 'unarchive');
-        const mark = markOf(session_id);
+        const id = existingSessionId(session_id);
+        const mark = markOf(id);
         mark.archivedAt = UNARCHIVED_ON_PURPOSE; // not 0: a program that also reads the desktop app's archive must not show it archived again
         store.marks.save(mark);
-        return `Restored session ${session_id}.`;
+        return `Restored session ${id}.`;
       },
     },
     {
