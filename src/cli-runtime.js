@@ -105,6 +105,54 @@ export function createCliRuntime({ claudeBin = defaultClaudeBin(), ttlMs = 3000 
     });
   }
 
+  // Runs the CLI with `input` on its stdin and keeps stdin open until `until(line)` accepts a line of its
+  // stdout (it returns something truthy, which is reported as `matched`). Then stdin is closed, which lets the
+  // CLI exit, and a CLI that does not exit within graceMs is killed. For a request that is answered by a line
+  // (stream-json mode), where closing stdin at once could end the CLI before it answers.
+  function runClaudeUntil(args, { cwd, input = '', timeoutMs = 60000, until, graceMs = 5000 } = {}) {
+    return new Promise((resolve) => {
+      const env = { ...process.env, TERM: 'dumb', CI: 'true' };
+      delete env.CLAUDECODE;
+      let child;
+      try {
+        child = launch(claudeBin, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+      } catch (error) {
+        return resolve({ code: 127, stdout: '', stderr: String(error.message ?? error), matched: null });
+      }
+      let stdout = '';
+      let stderr = '';
+      let pending = '';
+      let matched = null;
+      let settled = false;
+      let killer = null;
+      const settle = (result) => { if (!settled) { settled = true; clearTimeout(timer); clearTimeout(killer); resolve({ ...result, matched }); } };
+      const timer = setTimeout(() => { child.kill(); settle({ code: 124, stdout, stderr: stderr || `claude did not answer in ${timeoutMs} ms.` }); }, timeoutMs);
+      child.stdout?.on('data', (chunk) => {
+        const piece = chunk.toString();
+        stdout += piece;
+        pending += piece;
+        let newline = pending.indexOf('\n');
+        while (newline !== -1) {
+          const line = pending.slice(0, newline).trim();
+          pending = pending.slice(newline + 1);
+          newline = pending.indexOf('\n');
+          if (!line || matched) continue;
+          const found = until?.(line);
+          if (found) {
+            matched = found;
+            child.stdin?.end();
+            killer = setTimeout(() => child.kill(), graceMs);
+          }
+        }
+      });
+      child.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
+      child.once('error', (error) => settle({ code: 127, stdout, stderr: String(error.message ?? error) }));
+      child.once('close', (code) => settle({ code: code ?? 1, stdout, stderr }));
+      child.stdin?.on('error', () => {});
+      child.stdin?.write(input);
+    });
+  }
+
   // Runs a program and reports how it ended instead of throwing, so tools can read git's or gh's own words.
   function exec(cmd, args, { cwd, timeoutMs = 60000 } = {}) {
     return new Promise((resolve) => {
@@ -143,5 +191,5 @@ export function createCliRuntime({ claudeBin = defaultClaudeBin(), ttlMs = 3000 
     return findExecutable(cmd);
   }
 
-  return { claudeBin, listLive, spawnDetached, runClaude, exec, spawnProgram, which, platform: process.platform };
+  return { claudeBin, listLive, spawnDetached, runClaude, runClaudeUntil, exec, spawnProgram, which, platform: process.platform };
 }
