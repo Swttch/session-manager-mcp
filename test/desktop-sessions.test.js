@@ -30,7 +30,7 @@ function setup() {
 
 test('answers nothing on a machine without the desktop app', () => {
   const state = readDesktopState(path.join(os.tmpdir(), 'no-such-desktop-folder'));
-  assert.deepEqual(state, { starters: {}, archived: [], titles: {}, running: [] });
+  assert.deepEqual(state, { starters: {}, archived: [], titles: {}, running: [], awaiting: [] });
 });
 
 test('maps a started session to the CLI id of the session that started it', () => {
@@ -113,7 +113,7 @@ test('watching announces a changed title and a turn starting, and nothing for a 
     write('local_a', { sessionId: 'local_a', cliSessionId: 'cli-a', title: 'Two', latestUserFrameAt: 1, lastTurnEdgeAt: 2, lastActivityAt: Date.now() });
     await new Promise((r) => setTimeout(r, 400));
     assert.equal(seen.length, 1);
-    assert.deepEqual(seen[0].change, { list: true, running: false });
+    assert.deepEqual(seen[0].change, { list: true, running: false, awaiting: false });
     assert.deepEqual(seen[0].state.titles, { 'cli-a': 'Two' });
 
     write('local_a', { sessionId: 'local_a', cliSessionId: 'cli-a', title: 'Two', latestUserFrameAt: 1, lastTurnEdgeAt: 2, lastActivityAt: Date.now() + 5 });
@@ -123,7 +123,7 @@ test('watching announces a changed title and a turn starting, and nothing for a 
     write('local_a', { sessionId: 'local_a', cliSessionId: 'cli-a', title: 'Two', latestUserFrameAt: 9, lastTurnEdgeAt: 2, lastActivityAt: Date.now() });
     await new Promise((r) => setTimeout(r, 400));
     assert.equal(seen.length, 2);
-    assert.deepEqual(seen[1].change, { list: false, running: true });
+    assert.deepEqual(seen[1].change, { list: false, running: true, awaiting: false });
     assert.deepEqual(seen[1].state.running, ['cli-a']);
   } finally {
     stop();

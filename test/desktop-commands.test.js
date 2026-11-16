@@ -29,7 +29,7 @@ test('desktop-state prints what the desktop app records, by CLI id', () => {
   write('local_a', { sessionId: 'local_a', cliSessionId: 'cli-a', title: 'Boss', isArchived: true });
   write('local_b', { sessionId: 'local_b', cliSessionId: 'cli-b', spawnedFrom: { sessionId: 'local_a' } });
   const answer = lastLine(spawnSync(process.execPath, [cli, 'desktop-state'], { env, encoding: 'utf8' }).stdout);
-  assert.deepEqual(answer, { ok: true, starters: { 'cli-b': 'cli-a' }, archived: ['cli-a'], titles: { 'cli-a': 'Boss' }, running: [] });
+  assert.deepEqual(answer, { ok: true, starters: { 'cli-b': 'cli-a' }, archived: ['cli-a'], titles: { 'cli-a': 'Boss' }, running: [], awaiting: [] });
 });
 
 test('started-by answers from the desktop app when nothing was chosen here', () => {
@@ -62,7 +62,7 @@ test('desktop-watch prints a line when a title changes, and ends when its input 
     const deadline = Date.now() + 5000;
     while (!out.includes('\n') && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
     const line = JSON.parse(out.trim().split('\n')[0]);
-    assert.deepEqual(line.change, { list: true, running: false });
+    assert.deepEqual(line.change, { list: true, running: false, awaiting: false });
     assert.deepEqual(line.titles, { 'cli-a': 'Two' });
   } finally {
     child.stdin.end();
@@ -85,7 +85,7 @@ test('desktop-watch prints a line when a session is put under another by the pac
     const deadline = Date.now() + 5000;
     while (!out.includes('\n') && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
     const line = JSON.parse(out.trim().split('\n')[0]);
-    assert.deepEqual(line.change, { list: true, running: false });
+    assert.deepEqual(line.change, { list: true, running: false, awaiting: false });
   } finally {
     child.stdin.end();
   }

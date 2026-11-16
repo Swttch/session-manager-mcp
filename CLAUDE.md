@@ -37,6 +37,7 @@ src/
 ├── session-removal.js  delete a session with its worktree and branch
 ├── desktop-workspace.js  read a desktop's layout (read-only)
 ├── desktop-sessions.js   read and watch the Claude desktop app's session files (read-only)
+├── running-sessions.js   pid records of the sessions this package started, so `running` includes them
 ├── started-by.js       who started a session: the marks first, the desktop app's record after
 ├── store/              jsonl-table.js, entities.js
 └── tools/              one file per area, plus context.js and common.js

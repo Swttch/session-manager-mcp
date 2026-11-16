@@ -102,10 +102,11 @@ test('a started session whose transcript cannot be found is still reported, with
 });
 
 test('wake_when_done: false starts the session without watching it', async () => {
-  const { start, spawned } = setup();
+  const { start, spawned, sent } = setup();
   const out = await start({ wake_when_done: false });
   assert.equal(out.wake_when_done, false);
-  assert.equal(spawned[0].options?.onExit, undefined);
+  await spawned[0].options.onExit(0); // the exit is still seen (the running record goes), but nobody is told
+  assert.equal(sent.length, 0);
 });
 
 test('start_session says in its answer that the caller will be told, so the caller can say so truthfully', async () => {
@@ -131,8 +132,9 @@ test('the runtime reports how a detached program ended', async () => {
 });
 
 test('a server that does not know its own session has nobody to tell', async () => {
-  const { start, spawned } = setup({ self: null });
+  const { start, spawned, sent } = setup({ self: null });
   const out = await start();
   assert.equal(out.wake_when_done, false);
-  assert.equal(spawned[0].options?.onExit, undefined);
+  await spawned[0].options.onExit(0);
+  assert.equal(sent.length, 0);
 });

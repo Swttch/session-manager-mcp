@@ -62,7 +62,7 @@ if (process.argv[2] === 'set-archived') {
 // itself. Each prints JSON, one object per line.
 //
 // swttch-session-manager-mcp desktop-state
-//   { ok, starters: {cliId: startedByCliId}, archived: [cliId], titles: {cliId: title}, running: [cliId] }
+//   { ok, starters: {cliId: startedByCliId}, archived: [cliId], titles: {cliId: title}, running: [cliId], awaiting: [cliId] }
 if (process.argv[2] === 'desktop-state') {
   try {
     process.stdout.write(JSON.stringify({ ok: true, ...readDesktopState() }) + '\n');
@@ -104,7 +104,7 @@ if (process.argv[2] === 'started-by') {
 
 // swttch-session-manager-mcp desktop-watch
 // Stays running and prints one line whenever what the desktop app records changes:
-//   { ok, change: {list, running}, ...the desktop-state fields }
+//   { ok, change: {list, running, awaiting}, ...the desktop-state fields }
 // What moves is the desktop app's records and this package's own marks (who a session was put under by hand,
 // an archive by hand): a change to either one is a change of the list.
 // A turn already running when it starts is announced at once; otherwise the first read is only the baseline,
@@ -114,7 +114,7 @@ if (process.argv[2] === 'desktop-watch') {
     process.stdout.write(JSON.stringify({ ok: true, change, ...state }) + '\n');
   });
   const stopMarks = watchMarks(() => {
-    process.stdout.write(JSON.stringify({ ok: true, change: { list: true, running: false }, ...readDesktopState() }) + '\n');
+    process.stdout.write(JSON.stringify({ ok: true, change: { list: true, running: false, awaiting: false }, ...readDesktopState() }) + '\n');
   });
   const end = () => {
     stopDesktop();

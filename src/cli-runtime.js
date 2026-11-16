@@ -71,7 +71,7 @@ export function createCliRuntime({ claudeBin = defaultClaudeBin(), ttlMs = 3000 
       child.once('spawn', () => {
         child.unref();
         cached = null; // the live list changes now
-        resolve();
+        resolve({ pid: child.pid });
       });
     });
   }
