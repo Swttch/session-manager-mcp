@@ -74,7 +74,7 @@ if (process.argv[2] === 'desktop-state') {
 }
 
 // swttch-session-manager-mcp desktop-session <desktopSessionId>
-//   { ok, session: {title?, cliSessionId?, cwd?, isArchived, lastActivityAt, awaitingPerson?} | null }
+//   { ok, session: {title?, cliSessionId?, cwd?, isArchived, lastActivityAt, awaitingPerson?} | {deleted: true} | null }
 if (process.argv[2] === 'desktop-session') {
   try {
     const id = process.argv[3];

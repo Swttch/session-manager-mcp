@@ -83,6 +83,28 @@ function sessionFilesUnder(root, depth = 0) {
   return files;
 }
 
+/**
+ * Whether the desktop app deleted this session. Deleting removes `local_<id>.json` and leaves a marker named
+ * `deleted_<id>` (the id without its `local_`) in the same folder, holding the time of the deletion.
+ */
+function hasDeletedMarker(root, desktopSessionId, depth = 0) {
+  let entries;
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  const marker = `deleted_${desktopSessionId.slice('local_'.length)}`;
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      if (depth < 3 && hasDeletedMarker(path.join(root, entry.name), desktopSessionId, depth + 1)) return true;
+    } else if (entry.name === marker) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Files already read, by path, so that a refresh reads only the files that changed. */
 const readFiles = new Map();
 
@@ -154,12 +176,13 @@ export function readDesktopState(root = desktopSessionsRoot(), now = Date.now(),
   return { starters, archived, titles, running, awaiting };
 }
 
-/** What one desktop session's own file says, by its desktop id (`local_...`); null when there is no such file. */
+/** What one desktop session's own file says, by its desktop id (`local_...`); `{ deleted: true }` when the desktop app deleted it; null when there is nothing about it. */
 export function findDesktopSession(desktopSessionId, root = desktopSessionsRoot()) {
   // The id names a file, so it must be nothing but a name.
   if (typeof desktopSessionId !== 'string' || path.basename(desktopSessionId) !== desktopSessionId || !desktopSessionId.startsWith('local_')) return null;
   const file = readAll(root).find((f) => f.localId === desktopSessionId);
-  if (!file) return null;
+  // No file, but the marker the desktop app leaves when it deletes a session: say so, with nothing else to say.
+  if (!file) return hasDeletedMarker(root, desktopSessionId) ? { deleted: true } : null;
   return {
     ...(file.title && { title: file.title }),
     ...(file.cliSessionId && { cliSessionId: file.cliSessionId }),

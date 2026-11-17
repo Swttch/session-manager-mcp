@@ -129,3 +129,30 @@ test('watching announces a changed title and a turn starting, and nothing for a 
     stop();
   }
 });
+
+// A session the desktop app deleted: its file is gone and a `deleted_<id>` marker (the time of the deletion) stays.
+
+test('a session with only the deleted marker is reported as deleted, with nothing else', () => {
+  const { root } = setup();
+  const dir = path.join(root, 'account', 'workspace');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'deleted_abc-123'), '1794893217681');
+  assert.deepEqual(findDesktopSession('local_abc-123', root), { deleted: true });
+});
+
+test('a session whose file exists is read as before, even when a marker of the same id is left beside it', () => {
+  const { root, write } = setup();
+  write('local_abc-123', { sessionId: 'local_abc-123', cliSessionId: 'cli-1', title: 'Alive' });
+  fs.writeFileSync(path.join(root, 'account', 'workspace', 'deleted_abc-123'), '1794893217681');
+  const found = findDesktopSession('local_abc-123', root);
+  assert.equal(found.deleted, undefined);
+  assert.equal(found.title, 'Alive');
+});
+
+test('a session with neither a file nor a marker is null, and another session\'s marker does not count', () => {
+  const { root } = setup();
+  const dir = path.join(root, 'account', 'workspace');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'deleted_other'), '1');
+  assert.equal(findDesktopSession('local_abc-123', root), null);
+});
