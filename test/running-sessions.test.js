@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { findDesktopSession, readAwaitingPerson, readDesktopState, resetDesktopSessionsCache, watchDesktopState } from '../src/desktop-sessions.js';
 import { MAX_AGE_MS, clearRunning, readRunning, recordRunning, runningDir } from '../src/running-sessions.js';
 import { createSessionTools } from '../src/tools/session.js';
+import { createSessionMgmtTools } from '../src/tools/session-mgmt.js';
 
 const tmp = (prefix) => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 const cli = path.resolve(import.meta.dirname, '../src/cli.js');
@@ -41,7 +42,7 @@ test('desktop-watch-style change: opening a session moves it out of awaiting, an
   const dataDir = tmp('swttch-data-');
   const stop = watchDesktopState((state, change) => seen.push({ state, change }), root, 20, dataDir, 1000);
   try {
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 400));
     write({ lastFocusedAt: 5000 });
     await waitFor(() => seen.length > 0);
     assert.equal(seen.at(-1).change.awaiting, true);
@@ -160,3 +161,75 @@ async function waitFor(check, ms = 5000) {
   }
   assert.fail('waited for a change that never came');
 }
+
+// --- A session woken headlessly by send_message is on the record while its program runs.
+
+function wakeSetup({ live = [], holder = false } = {}) {
+  const configDir = tmp('swttch-cfg-');
+  const dataDir = tmp('swttch-data-');
+  const proj = path.join(configDir, 'projects', '-tmp-demo');
+  fs.mkdirSync(proj, { recursive: true });
+  for (const id of ['aaaa', 'cccc']) {
+    fs.writeFileSync(path.join(proj, `${id}.jsonl`), JSON.stringify({ type: 'user', uuid: `u-${id}`, sessionId: id, cwd: '/tmp/demo', timestamp: '2026-11-01T00:00:00Z', message: { role: 'user', content: `p ${id}` } }) + '\n');
+  }
+  const spawned = [];
+  let nextPid = process.pid; // a process that surely lives
+  const runtime = {
+    listLive: async () => live,
+    spawnDetached: async (args, cwd, options) => { spawned.push({ args, cwd, options }); return { pid: nextPid }; },
+  };
+  const owners = { find: async () => (holder ? { pid: 4242, control: { port: 1, token: 't' } } : null), control: async () => ({}) };
+  const ctx = { configDir, dataDir, selfSessionId: 'cccc', runtime, owners };
+  const mgmt = Object.fromEntries(createSessionMgmtTools(ctx).map((t) => [t.name, t.handler]));
+  return { mgmt, dataDir, spawned, setPid: (pid) => { nextPid = pid; } };
+}
+
+test('send_message that wakes a resting session records its program, and the program ending removes the record', async () => {
+  const { mgmt, dataDir, spawned } = wakeSetup();
+  const answer = await mgmt.send_message({ session_id: 'aaaa', message: 'work' });
+  assert.match(answer, /resumed session aaaa headlessly/);
+  assert.deepEqual(readRunning({ dataDir }), ['aaaa']);
+  await spawned[0].options.onExit(0);
+  assert.deepEqual(readRunning({ dataDir }), []);
+});
+
+test('send_message that hands the message to the program already running the session records nothing', async () => {
+  const { mgmt, dataDir, spawned } = wakeSetup({ live: [{ pid: 9, cwd: '/tmp/demo', kind: 'interactive', sessionId: 'aaaa', name: 'aaaa', status: 'idle' }], holder: true });
+  await mgmt.send_message({ session_id: 'aaaa', message: 'work' });
+  assert.equal(spawned.length, 0);
+  assert.deepEqual(readRunning({ dataDir }), []);
+});
+
+test('a session woken again while its first program still runs stays running until the last program ends', async () => {
+  const { mgmt, dataDir, spawned, setPid } = wakeSetup();
+  const second = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' });
+  try {
+    await mgmt.send_message({ session_id: 'aaaa', message: 'one' }); // pid of this test process
+    setPid(second.pid);
+    await mgmt.send_message({ session_id: 'aaaa', message: 'two' });
+    await spawned[1].options.onExit(0); // the later one ends: the first still runs
+    assert.deepEqual(readRunning({ dataDir }), ['aaaa']);
+    await spawned[0].options.onExit(0);
+    assert.deepEqual(readRunning({ dataDir }), []);
+  } finally {
+    second.kill();
+  }
+});
+
+test('a woken session whose program lives past a day, or whose process is gone, is not listed', () => {
+  const dataDir = tmp('swttch-data-');
+  recordRunning('aaaa', process.pid, { dataDir, now: 1000 });
+  recordRunning('bbbb', 99999999, { dataDir, now: Date.now() });
+  assert.deepEqual(readRunning({ dataDir, now: 1000 + MAX_AGE_MS + 1 }), []);
+  assert.deepEqual(fs.readdirSync(runningDir(dataDir)), [], 'both records were removed');
+});
+
+test('the record keeps the latest run\'s pid and startedAt at the top, where the first version of this package reads them', () => {
+  const dataDir = tmp('swttch-data-');
+  recordRunning('aaaa', process.pid, { dataDir, now: Date.now() - 1000 });
+  recordRunning('aaaa', process.pid + 0, { dataDir, now: Date.now() });
+  const record = JSON.parse(fs.readFileSync(path.join(runningDir(dataDir), 'aaaa.json'), 'utf8'));
+  assert.equal(record.pid, process.pid);
+  assert.equal(typeof record.startedAt, 'number');
+  assert.equal(record.runs.at(-1).startedAt, record.startedAt);
+});

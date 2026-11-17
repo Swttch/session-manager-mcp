@@ -260,7 +260,7 @@ Besides the MCP server, the entry script answers a few commands for a program th
 | `set-parent <id> <parent\|none\|inherit>` | puts a session under another, takes it to the top level on purpose, or forgets what was chosen |
 | `set-archived <id> <archived\|unarchived\|inherit>` | archives a session, brings it back on purpose, or forgets what was chosen |
 | `started-by <id>` | `{ startedBy, source, cwd }`: the session that started it, from the record kept here first, and from the Claude desktop app's record only when nothing was chosen here |
-| `desktop-state` | what the Claude desktop app records, by CLI id: `starters`, `archived`, `titles`, `running` (also lists the sessions this package started with `start_session` while their program is alive), `awaiting` (waiting for a person) |
+| `desktop-state` | what the Claude desktop app records, by CLI id: `starters`, `archived`, `titles`, `running` (also lists the sessions this package started with `start_session`, or woke headlessly with `send_message`, while their program is alive), `awaiting` (waiting for a person) |
 | `desktop-session <desktopId>` | one desktop session's own record (title, CLI id, folder, archived, waiting for the person: a wrap-up that asks something of the user, a `blocked` or `need_input` turn summary that names an action and that the person has not opened since the turn ended, or a pending permission request), or `null` |
 | `desktop-watch` | stays running and prints a line whenever `desktop-state` changes or a row of this package's own marks changes, such as a session put under another by `set_session_parent` (`change: { list, running, awaiting }`); ends when its input closes |
 

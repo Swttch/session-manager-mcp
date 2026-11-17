@@ -4,9 +4,15 @@
 // knows nothing about it, so its session files never say a turn is running. This package is the one that
 // started the program, so it keeps one small file per started session while the program lives:
 //
-//   <data dir>/session-manager/running/<cliSessionId>.json   { pid, startedAt }
+//   <data dir>/session-manager/running/<cliSessionId>.json   { pid, startedAt, runs: [{ pid, startedAt }] }
+//   (pid and startedAt are the latest run's, kept where older versions of this package read them)
 //
-// The file is removed when this server sees the program end. A server that is gone by then (it was the
+// Both start_session (a new session) and send_message (a session that nobody ran, resumed headlessly) start such
+// a program. A session can be woken again while an earlier program of it still runs, so the file lists every
+// program of the session, and a program that ends removes only its own entry: the session stays running until
+// the last one is gone.
+//
+// The file is removed when this server sees the last program end. A server that is gone by then (it was the
 // CLI's child and went away with it) cannot remove it, so every read also checks that the process still
 // exists and drops the file of one that does not. A process id can be handed to an unrelated program once
 // the first one is gone, so a record older than MAX_AGE_MS is dropped as well.
@@ -38,29 +44,60 @@ export function processAlive(pid) {
   }
 }
 
-/** Notes that the program running this session started. A failure to write is not worth failing the start for. */
-export function recordRunning(sessionId, pid, { dataDir = defaultDataDir(), now = Date.now() } = {}) {
+/** The programs recorded for one session. Reads the first shape of the file, `{ pid, startedAt }`, too. */
+function runsOf(record) {
+  if (Array.isArray(record?.runs)) return record.runs.filter((r) => Number.isInteger(r?.pid) && typeof r?.startedAt === 'number');
+  if (Number.isInteger(record?.pid) && typeof record?.startedAt === 'number') return [{ pid: record.pid, startedAt: record.startedAt }];
+  return [];
+}
+
+function readRecord(file) {
+  try {
+    return runsOf(JSON.parse(fs.readFileSync(file, 'utf8')));
+  } catch (error) {
+    return error.code === 'ENOENT' ? [] : null; // null: written while being read, or not readable now
+  }
+}
+
+function writeRuns(dataDir, sessionId, runs) {
+  const file = path.join(runningDir(dataDir), `${sessionId}.json`);
+  if (runs.length === 0) {
+    fs.rmSync(file, { force: true });
+    return;
+  }
+  fs.mkdirSync(runningDir(dataDir), { recursive: true });
+  // pid and startedAt of the latest run stay at the top, where the 0.5.x readers of the first file shape look for them.
+  const latest = runs[runs.length - 1];
+  fs.writeFileSync(file, JSON.stringify({ pid: latest.pid, startedAt: latest.startedAt, runs }));
+}
+
+/**
+ * Notes that a program running this session started. A program of the same session that is still alive stays
+ * on the record beside it. A failure to write is not worth failing the start for.
+ */
+export function recordRunning(sessionId, pid, { dataDir = defaultDataDir(), now = Date.now(), alive = processAlive } = {}) {
   if (!safeId(sessionId) || !Number.isInteger(pid)) return false;
   try {
-    fs.mkdirSync(runningDir(dataDir), { recursive: true });
-    fs.writeFileSync(path.join(runningDir(dataDir), `${sessionId}.json`), JSON.stringify({ pid, startedAt: now }));
+    const earlier = (readRecord(path.join(runningDir(dataDir), `${sessionId}.json`)) ?? []).filter((r) => r.pid !== pid && now - r.startedAt < MAX_AGE_MS && alive(r.pid));
+    writeRuns(dataDir, sessionId, [...earlier, { pid, startedAt: now }]);
     return true;
   } catch {
     return false;
   }
 }
 
-/** Notes that the program ended. */
-export function clearRunning(sessionId, { dataDir = defaultDataDir() } = {}) {
+/** Notes that a program ended: the one with this pid, or every program of the session when no pid is given. */
+export function clearRunning(sessionId, { dataDir = defaultDataDir(), pid } = {}) {
   if (!safeId(sessionId)) return;
   try {
-    fs.rmSync(path.join(runningDir(dataDir), `${sessionId}.json`), { force: true });
+    const runs = pid === undefined ? [] : (readRecord(path.join(runningDir(dataDir), `${sessionId}.json`)) ?? []).filter((r) => r.pid !== pid);
+    writeRuns(dataDir, sessionId, runs);
   } catch {
     // Already gone, or not removable: the next read drops it if its process is gone.
   }
 }
 
-/** The CLI ids of the started sessions whose program is still running. Stale records are removed on the way. */
+/** The CLI ids of the sessions with a program still running. Records of programs that are gone are removed on the way. */
 export function readRunning({ dataDir = defaultDataDir(), now = Date.now(), alive = processAlive } = {}) {
   const dir = runningDir(dataDir);
   let names;
@@ -73,15 +110,39 @@ export function readRunning({ dataDir = defaultDataDir(), now = Date.now(), aliv
   for (const name of names) {
     if (!name.endsWith('.json')) continue;
     const id = name.slice(0, -'.json'.length);
-    let record;
-    try {
-      record = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
-    } catch {
-      continue; // written while being read: the next read sees it whole
+    const runs = readRecord(path.join(dir, name));
+    if (runs === null) continue;
+    const live = runs.filter((r) => now - r.startedAt < MAX_AGE_MS && alive(r.pid));
+    if (live.length > 0) ids.push(id);
+    if (live.length !== runs.length || runs.length === 0) {
+      try {
+        writeRuns(dataDir, id, live);
+      } catch {
+        // The next read tries again.
+      }
     }
-    const fresh = typeof record?.startedAt === 'number' && now - record.startedAt < MAX_AGE_MS;
-    if (fresh && alive(record.pid)) ids.push(id);
-    else clearRunning(id, { dataDir });
   }
   return ids;
+}
+
+/**
+ * Starts a detached program for a session and keeps it on the record while it runs. `onExit(code)` is called
+ * after the record has been cleared. Every program this package starts for a session goes through here.
+ */
+export async function spawnTracked(ctx, sessionId, args, cwd, onExit) {
+  let pid = null;
+  let exited = false;
+  const started = await ctx.runtime.spawnDetached(args, cwd, {
+    onExit: (code) => {
+      exited = true;
+      if (pid !== null) clearRunning(sessionId, { dataDir: ctx.dataDir, pid });
+      return onExit?.(code);
+    },
+  });
+  // A runtime that cannot say which process it started leaves nothing on the record.
+  if (!exited && typeof started?.pid === 'number') {
+    pid = started.pid;
+    recordRunning(sessionId, pid, { dataDir: ctx.dataDir });
+  }
+  return started;
 }

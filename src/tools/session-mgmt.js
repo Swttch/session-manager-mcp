@@ -15,6 +15,7 @@ import { removeWorktree, restoreWorktree } from '../worktrees.js';
 import { deleteSessionById } from '../session-removal.js';
 import { normalizeSessionName, renameWithCli } from '../rename.js';
 import { UNARCHIVED_ON_PURPOSE } from '../set-archived.js';
+import { spawnTracked } from '../running-sessions.js';
 import { setSessionParent } from '../set-parent.js';
 import { familyOf, isCallingSession, lookups, resolveContext, resolveSessionId, sessionRow, unavailable } from './context.js';
 
@@ -223,7 +224,8 @@ export function createSessionMgmtTools(options = {}) {
         if (mark?.effort) args.push('--effort', mark.effort);
         if (mark?.permissionMode) args.push('--permission-mode', mark.permissionMode);
         args.push(labelled);
-        await runtime.spawnDetached(args, summary.cwd ?? process.cwd());
+        // Recorded while it runs, so that `desktop-state` lists the session as running: nothing else knows this program.
+        await spawnTracked(ctx, target, args, summary.cwd ?? process.cwd());
         return `delivered: resumed session ${target} headlessly with your message; its reply will appear in that session's transcript.`;
       },
     },

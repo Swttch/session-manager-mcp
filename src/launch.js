@@ -6,7 +6,7 @@ import { getCliSession } from './cli-sessions.js';
 import { SessionMark } from './store/entities.js';
 import { createWorktree } from './worktrees.js';
 import { reportTurnEnd } from './wake.js';
-import { clearRunning, recordRunning } from './running-sessions.js';
+import { spawnTracked } from './running-sessions.js';
 
 export const MODES = ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'];
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -67,12 +67,8 @@ export async function launchSession(ctx, args, { parentSessionId = ctx.selfSessi
   // is no such session. This server is the one watching, so it can only tell while it is still up.
   const wake = args.wake_when_done !== false && Boolean(parentSessionId);
   // While the program runs, `desktop-state` lists the session as running: the desktop app does not know it.
-  const onExit = (exitCode) => {
-    clearRunning(sessionId, { dataDir: ctx.dataDir });
-    if (wake) return reportTurnEnd(ctx, { parentSessionId, sessionId, title: args.title, exitCode });
-  };
-  const started = await ctx.runtime.spawnDetached(cliArgs, cwd, { onExit });
-  if (typeof started?.pid === 'number') recordRunning(sessionId, started.pid, { dataDir: ctx.dataDir });
+  const onExit = wake ? (exitCode) => reportTurnEnd(ctx, { parentSessionId, sessionId, title: args.title, exitCode }) : undefined;
+  await spawnTracked(ctx, sessionId, cliArgs, cwd, onExit);
   return { session_id: sessionId, name: handle, cwd, wake_when_done: wake };
 }
 
