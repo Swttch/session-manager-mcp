@@ -41,12 +41,12 @@ export function createOwnerClient({ registryDirs = defaultRegistryDirs() } = {})
     return null;
   }
 
-  async function control(owner, body) {
+  async function control(owner, body, { timeoutMs = 10000 } = {}) {
     const response = await fetch(`http://127.0.0.1:${owner.control.port}/internal/session-control`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-ccg-token': owner.control.token },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     let answer = {};
     try { answer = await response.json(); } catch { /* an empty body is fine */ }

@@ -6,7 +6,7 @@ import { getCliSession } from './cli-sessions.js';
 import { SessionMark } from './store/entities.js';
 import { createWorktree } from './worktrees.js';
 import { reportTurnEnd } from './wake.js';
-import { spawnTracked } from './running-sessions.js';
+import { spawnTracked, recordRunning, clearRunning } from './running-sessions.js';
 
 export const MODES = ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'];
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -68,8 +68,95 @@ export async function launchSession(ctx, args, { parentSessionId = ctx.selfSessi
   const wake = args.wake_when_done !== false && Boolean(parentSessionId);
   // While the program runs, `desktop-state` lists the session as running: the desktop app does not know it.
   const onExit = wake ? (exitCode) => reportTurnEnd(ctx, { parentSessionId, sessionId, title: args.title, exitCode }) : undefined;
-  await spawnTracked(ctx, sessionId, cliArgs, cwd, onExit);
+  // The backend that holds the session that asked runs the new session when it can: a CLI it runs has the channel
+  // through which the session asks the person, which a CLI started here does not have. Otherwise it is started here.
+  const runByHost = await startThroughHost(ctx, { parentSessionId, sessionId, cwd, text, args, onExit });
+  if (!runByHost) await spawnTracked(ctx, sessionId, cliArgs, cwd, onExit);
   return { session_id: sessionId, name: handle, cwd, wake_when_done: wake };
+}
+
+/** How long the backend may hold one request that waits for the end of a turn; the wait is asked again after it. */
+const TURN_WAIT_MS = 50_000;
+
+/**
+ * How long the backend has to answer that it started the session. Longer than an ordinary request: the CLI is
+ * started before the answer. A request that gives up while the backend goes on starting the session would look like
+ * a failed start of a session that runs, and the caller would start it again.
+ */
+const START_TIMEOUT_MS = 60_000;
+
+/**
+ * Hands the new session to the backend that holds the session that asked, when that backend can run it. Answers whether
+ * it did; `false` means nothing was asked of any backend, and the caller starts the session itself.
+ *
+ * The only thing checked of the backend is whether it can take this request: it is asked what it can do first, and an
+ * older backend, which does not know that question either, is answered as one that cannot. A backend that says it can
+ * is the one that runs the session; if it then fails, that is an error of the start and not a reason to start a second
+ * copy here, because a request that ran out of time may have started the session all the same.
+ *
+ * While the first turn of the session goes on, the session is on the running record (it has no program of ours to
+ * look at, so the backend's own process stands for it), and the end of that turn is waited for with requests that the
+ * backend holds up to TURN_WAIT_MS each. When the turn ends, or the backend cannot be asked any more, the record is
+ * cleared and `onExit` is called, as it is when a program of ours ends.
+ */
+async function startThroughHost(ctx, { parentSessionId, sessionId, cwd, text, args, onExit }) {
+  if (!parentSessionId || !ctx.owners) return false;
+  const owner = await ctx.owners.find(parentSessionId);
+  if (!owner) return false;
+  if (!(await canRunSessions(ctx, owner))) return false;
+
+  const answer = await ctx.owners.control(
+    owner,
+    {
+      sessionId,
+      action: 'start_session',
+      workingDir: cwd,
+      text,
+      title: args.title,
+      ...(args.model ? { model: args.model } : {}),
+      ...(args.effort ? { effort: args.effort } : {}),
+      ...(args.permission_mode ? { permissionMode: args.permission_mode } : {}),
+    },
+    { timeoutMs: START_TIMEOUT_MS },
+  );
+  if (answer?.ok !== true) throw new Error('The backend did not start the session.');
+
+  recordRunning(sessionId, owner.pid, { dataDir: ctx.dataDir });
+  void waitForFirstTurn(ctx, owner, sessionId, Number.isInteger(answer.turnEnds) ? answer.turnEnds : 0, onExit);
+  return true;
+}
+
+/** Whether the backend answers that it starts sessions and reports the end of their turns. */
+async function canRunSessions(ctx, owner) {
+  try {
+    const answer = await ctx.owners.control(owner, { action: 'capabilities' });
+    return Array.isArray(answer?.actions) && answer.actions.includes('start_session') && answer.actions.includes('await_turn_end');
+  } catch {
+    return false; // an older backend answers "unknown action"
+  }
+}
+
+async function waitForFirstTurn(ctx, owner, sessionId, seen, onExit) {
+  let after = seen;
+  try {
+    for (;;) {
+      const answer = await ctx.owners.control(
+        owner,
+        { sessionId, action: 'await_turn_end', after, waitMs: TURN_WAIT_MS },
+        { timeoutMs: TURN_WAIT_MS + 10_000 },
+      );
+      if (answer?.ok !== true || answer.ended === true) break;
+      after = Number.isInteger(answer.turnEnds) ? answer.turnEnds : after;
+    }
+  } catch {
+    // The backend cannot be asked any more (it ended): the session ended with it.
+  }
+  clearRunning(sessionId, { dataDir: ctx.dataDir, pid: owner.pid });
+  try {
+    await onExit?.(null);
+  } catch {
+    // Nobody waits for the report; see reportTurnEnd.
+  }
 }
 
 function safeCwd(ctx, sessionId) {

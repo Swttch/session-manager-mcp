@@ -25,6 +25,8 @@ function setup({ self = 'cccc', holder = { pid: 4242, control: { port: 1, token:
   const owners = {
     find: async (sessionId) => (holder && sessionId === self ? holder : null),
     control: async (owner, body) => {
+      // This is the path of a backend that does not run sessions (an older one): the session is started here.
+      if (body.action === 'capabilities') throw new Error('Unknown action: capabilities');
       if (refuse) throw new Error('The holding program answered 409.');
       sent.push({ owner, body });
       return {};

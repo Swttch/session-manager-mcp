@@ -22,7 +22,7 @@ function setup({ self = 'cccc' } = {}) {
   const spawned = [];
   const sent = [];
   const runtime = { listLive: async () => [], spawnDetached: async (args, cwd, options) => { spawned.push({ args, cwd, options }); } };
-  const owners = { find: async () => ({ pid: 1, control: { port: 1, token: 't' } }), control: async (owner, body) => { sent.push(body); return {}; } };
+  const owners = { find: async () => ({ pid: 1, control: { port: 1, token: 't' } }), control: async (owner, body) => { if (body.action === 'capabilities') throw new Error('Unknown action: capabilities'); sent.push(body); return {}; } };
   const toolsFor = (sessionId) => {
     const ctx = { configDir, dataDir, selfSessionId: sessionId, runtime, owners };
     const toMap = (tools) => Object.fromEntries(tools.map((t) => [t.name, t.handler]));
